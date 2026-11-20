@@ -111,7 +111,14 @@ test("devin cloud sessions use the CLI login, follow pages, and resume in cloud 
       items: [{ session_id: "bb22", title: null, origin: "webapp", created_at: 1, updated_at: 2, is_archived: true }], has_next_page: false,
     },
     "organizations/org-1/sessions/aa11/messages?first=200": {
-      items: [{ source: "user", message: "why does WAL replay stall?", created_at: 1790000000 }, { source: "devin", message: "The fetch is serial.", created_at: 1790000060 }],
+      items: [{ source: "user", created_at: 1790000000, message: [
+        "SYSTEM:", "<latest_message>", "Ada (U0AB12345) [ts=1790000000.1]: why does WAL replay stall? cc [@Bo](slack://user?id=U0CD34567)", "</latest_message>", "",
+        "=== BEGIN THREAD HISTORY ===", "Ada (U0AB12345) [ts=1790000000.1]: why does WAL replay stall? cc [@Bo](slack://user?id=U0CD34567)",
+        "[Slack unfurl — this is an automatic link preview, not a user message]", "> replay p99 is 40s",
+        "=== END THREAD HISTORY ===", "Channel ID: C1", "The <latest_message> is the message that you should use to guide your goals",
+      ].join("\n") }, { source: "devin", message: "The fetch is serial.", created_at: 1790000060 },
+      { source: "user", created_at: 1790000120, message: "=== BEGIN THREAD HISTORY (in #infra) ===\nBo (U0CD34567) [ts=1790000120.2]: can we parallelize it?\n=== END THREAD HISTORY ===\nChannel ID: C1" },
+      { source: "user", created_at: 1790000180, message: "see [#infra](slack://channel?id=C1), where Cy (B0EF56789): it spins" }],
     },
   };
   const realFetch = globalThis.fetch;
@@ -122,7 +129,7 @@ test("devin cloud sessions use the CLI login, follow pages, and resume in cloud 
     return route in pages ? Response.json(pages[route]) : new Response("", { status: 404 });
   }) as typeof fetch;
   try {
-    const { listDevinCloudSessions } = await import("../src/services/devin-sessions");
+    const { cachedDevinCloudSessions, listDevinCloudSessions } = await import("../src/services/devin-sessions");
     const { readTranscript, resumeSpec } = await load();
     const sessions = await listDevinCloudSessions();
     assert.deepEqual(sessions.map(s => [s.id, s.title, s.projectName, s.archived]),
@@ -130,10 +137,12 @@ test("devin cloud sessions use the CLI login, follow pages, and resume in cloud 
     assert.equal(sessions[0].updatedAt, new Date(1790000900 * 1000).toISOString());
     const transcript = await readTranscript(sessions[0]);
     assert.deepEqual(transcript.items.map(i => i.kind === "message" ? `${i.role}: ${i.text}` : i.kind),
-      ["user: why does WAL replay stall?", "assistant: The fetch is serial."]);
+      ["user: why does WAL replay stall? cc @Bo\n\n> replay p99 is 40s", "assistant: The fetch is serial.", "user: Bo: can we parallelize it?", "user: see #infra, where Cy: it spins"]);
     assert.deepEqual(resumeSpec(sessions[0]).args, ["--cloud", "--resume", "devin-aa11"]);
+    // Offline or signed out of the API: the last fetched list stays visible.
     globalThis.fetch = (async () => new Response("", { status: 401 })) as typeof fetch;
-    assert.deepEqual(await listDevinCloudSessions(), []);
+    assert.deepEqual(await listDevinCloudSessions(), sessions);
+    assert.deepEqual(await cachedDevinCloudSessions(), sessions);
   } finally {
     globalThis.fetch = realFetch;
   }

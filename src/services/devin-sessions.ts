@@ -11,12 +11,12 @@
  * Cloud sessions live only in Devin's API, which accepts the CLI's own login.
  */
 
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import { asArray, asRecord, asString } from "./jsonl.js";
-import { openReadOnly } from "./platform.js";
+import { cacheDirectory, openReadOnly } from "./platform.js";
 import { cleanPromptText, isMetaPrompt, toPreview, toTitle } from "./prompt-text.js";
 import type { ChatMessage, SessionSummary } from "./session-types.js";
 
@@ -26,6 +26,7 @@ export const DEVIN_DB = path.join(
   "sessions.db",
 );
 const DEVIN_CREDENTIALS = path.join(path.dirname(path.dirname(DEVIN_DB)), "credentials.toml");
+const CLOUD_CACHE = path.join(cacheDirectory, "devin-cloud.json");
 const CLOUD_ORIGINS: Record<string, string> = { slack: "Slack", webapp: "Web", desktop: "Desktop", cli: "CLI", api: "API" };
 
 type DevinApi = (route: string) => Promise<Record<string, unknown>>;
@@ -57,17 +58,22 @@ async function allPages(api: DevinApi, route: string): Promise<Record<string, un
   }
 }
 
-/** The signed-in user's cloud sessions; empty when not signed in or offline. */
+/** The last cloud list fetched, so the picker can show it before the API answers. */
+export async function cachedDevinCloudSessions(): Promise<SessionSummary[]> {
+  try { return JSON.parse(await readFile(CLOUD_CACHE, "utf8")) as SessionSummary[]; } catch { return []; }
+}
+
+/** The signed-in user's cloud sessions; the cached list when the API is unreachable. */
 export async function listDevinCloudSessions(): Promise<SessionSummary[]> {
+  const api = await devinApi();
+  if (api === null) return [];
   try {
-    const api = await devinApi();
-    if (api === null) return [];
     const self = await api("self");
     const org = asString(self.devin_sessions_org_id) ?? asString(self.org_id);
     const user = asString(self.user_id);
     if (!org || !user) return [];
     const route = `organizations/${org}/sessions`;
-    return (await allPages(api, `${route}?user_ids=${encodeURIComponent(user)}`)).flatMap((item): SessionSummary[] => {
+    const sessions = (await allPages(api, `${route}?user_ids=${encodeURIComponent(user)}`)).flatMap((item): SessionSummary[] => {
       const id = asString(item.session_id);
       if (!id) return [];
       const origin = CLOUD_ORIGINS[asString(item.origin) ?? ""] ?? "Cloud";
@@ -90,9 +96,32 @@ export async function listDevinCloudSessions(): Promise<SessionSummary[]> {
         archived: item.is_archived === true,
       }];
     });
+    await mkdir(cacheDirectory, { recursive: true });
+    await writeFile(CLOUD_CACHE, JSON.stringify(sessions));
+    return sessions;
   } catch {
-    return [];
+    return cachedDevinCloudSessions();
   }
+}
+
+// Slack users (U, or W on Enterprise Grid) and bots (B).
+const SLACK_SPEAKER = / \([UWB][A-Z0-9]{8,}\)(?: \[ts=[\d.]+\])?:/g;
+
+/** Slack-started sessions wrap the request in Devin's instructions and Slack markup; keep what people wrote. */
+function cleanSlack(text: string): string {
+  const latest = /<latest_message>\s*([\s\S]*?)\s*<\/latest_message>/.exec(text)?.[1];
+  // Follow-ups in the thread arrive as a bare history block.
+  const thread = /=== BEGIN THREAD HISTORY[^\n]*===\n([\s\S]*?)(?:=== END THREAD HISTORY ===|$)/.exec(text)?.[1];
+  let body = text;
+  if (latest !== undefined || thread !== undefined) {
+    const said = (latest ?? "").replace(SLACK_SPEAKER, ":");
+    const context = (thread ?? "").replace(SLACK_SPEAKER, ":").replace(said, "").trim();
+    body = [said.replace(/^[^:\n]*: /, ""), context].filter(Boolean).join("\n\n");
+  }
+  return body
+    .replace(SLACK_SPEAKER, ":")
+    .replace(/\[([@#][^\]]+)\]\(slack:\/\/[^)]*\)/g, "$1")
+    .replace(/^\[Slack unfurl[^\]]*\]\n/gm, "");
 }
 
 export async function readDevinCloudMessages(route: string): Promise<ChatMessage[]> {
@@ -100,7 +129,7 @@ export async function readDevinCloudMessages(route: string): Promise<ChatMessage
   if (api === null) throw new Error("sign in with devin auth login to read cloud sessions");
   return (await allPages(api, `${route}/messages`)).map(item => ({
     role: item.source === "user" ? "user" : "assistant",
-    text: asString(item.message) ?? "",
+    text: item.source === "user" ? cleanSlack(asString(item.message) ?? "") : asString(item.message) ?? "",
     tools: [],
     timestamp: typeof item.created_at === "number" ? new Date(item.created_at * 1000).toISOString() : null,
   }));

@@ -4,7 +4,7 @@ process.removeAllListeners("warning");
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { emitKeypressEvents, type Key } from "node:readline";
-import { listDevinCloudSessions } from "./services/devin-sessions";
+import { cachedDevinCloudSessions, listDevinCloudSessions } from "./services/devin-sessions";
 import { listSessions } from "./services/session-index";
 import { readTranscript } from "./services/session-transcript";
 import {
@@ -163,10 +163,11 @@ class SearchChats {
     this.state.status = "";
     this.draw();
     try {
-      // Cloud sessions arrive over the network, so local chats show first.
+      // Show the last known cloud sessions at once, then the API's current list.
       const cloud = listDevinCloudSessions();
-      this.show(await listSessions());
-      this.show([...this.sessions, ...await cloud]);
+      const local = await listSessions();
+      this.show([...local, ...await cachedDevinCloudSessions()]);
+      this.show([...local, ...await cloud]);
       void this.updateIndex();
     } catch (error) { this.state.status = `Scan failed: ${String(error)}`; }
     finally { this.state.loading = false; this.draw(); }
