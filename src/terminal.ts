@@ -91,7 +91,7 @@ const TONES: Record<TextTone, string> = {
   opening: "\x1b[1;38;5;80m", match: "\x1b[1;38;5;222m", semantic: "\x1b[1;38;5;147m",
   code: "\x1b[38;5;152;48;5;235m",
   codex: AGENTS.codex.color, "claude-code": AGENTS["claude-code"].color,
-  cursor: AGENTS.cursor.color, devin: AGENTS.devin.color,
+  cursor: AGENTS.cursor.color, devin: AGENTS.devin.color, "devin-cloud": AGENTS["devin-cloud"].color,
 };
 export const MATCH_STYLE = "\x1b[1;38;5;16;48;5;222m";
 

@@ -9,6 +9,7 @@ export const AGENTS: Record<AgentKind, { icon: string; label: string; color: str
   "claude-code": { icon: "✳", label: "Claude", color: "\x1b[38;5;215m", command: "claude", resume: id => ["--resume", id] },
   cursor: { icon: "⬡", label: "Cursor", color: "\x1b[38;5;111m", command: "cursor-agent", resume: id => ["--resume", id] },
   devin: { icon: "✦", label: "Devin", color: "\x1b[38;5;114m", command: "devin", resume: id => ["--resume", id] },
+  "devin-cloud": { icon: "✧", label: "Devin Cloud", color: "\x1b[38;5;114m", command: "devin", resume: id => ["--cloud", "--resume", `devin-${id}`] },
 };
 
 /** Tab cycles through "all" plus every agent that has chats on this machine. */

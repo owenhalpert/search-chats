@@ -4,6 +4,7 @@ process.removeAllListeners("warning");
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { emitKeypressEvents, type Key } from "node:readline";
+import { listDevinCloudSessions } from "./services/devin-sessions";
 import { listSessions } from "./services/session-index";
 import { readTranscript } from "./services/session-transcript";
 import {
@@ -18,7 +19,13 @@ import { clean, dropLastGrapheme } from "./terminal";
 import { detailLines, detailViewportHeight, HELP_LINES, layout, render, type ViewState } from "./view";
 import { SEARCH_POLICY } from "./services/search-policy";
 
-const AGENT_NAMES: Record<string, AgentKind> = { codex: "codex", claude: "claude-code", "claude-code": "claude-code", cursor: "cursor", devin: "devin" };
+const AGENT_NAMES: Record<string, AgentKind> = { codex: "codex", claude: "claude-code", "claude-code": "claude-code", cursor: "cursor", devin: "devin", "devin-cloud": "devin-cloud" };
+const AGENT_LIST = "all, codex, claude, cursor, devin, or devin-cloud";
+
+async function allSessions(): Promise<SessionSummary[]> {
+  const cloud = listDevinCloudSessions();
+  return [...await listSessions(), ...await cloud];
+}
 
 const HELP = `search-chats: search and resume your coding agent chats
 
@@ -31,7 +38,7 @@ ${AGENT_KINDS.map(kind => `${AGENTS[kind].icon} ${AGENTS[kind].label}`).join("  
 Enter resumes the chat in this terminal. Ctrl-T reads the transcript.
 Tab filters agents. Ctrl-Y copies the resume command. F1 shows all keys.
 
---agent    all, codex, claude, cursor, or devin
+--agent    ${AGENT_LIST}
 --local    Search titles and projects only, without transcript search
 --list     Print matching chats without opening the TUI
 --json     Print --list results as JSON
@@ -54,7 +61,7 @@ function optionsFor(argv: string[]): Options {
     else if (value === "--index") options.index = true;
     else if (value === "--agent") {
       const agent = argv[++i];
-      if (agent !== "all" && !(agent in AGENT_NAMES)) throw new Error("--agent needs all, codex, claude, cursor, or devin");
+      if (agent !== "all" && !(agent in AGENT_NAMES)) throw new Error(`--agent needs ${AGENT_LIST}`);
       options.agent = agent === "all" ? "all" : AGENT_NAMES[agent];
     } else if (value.startsWith("-")) throw new Error(`Unknown option: ${value}`);
     else query.push(value);
@@ -156,14 +163,22 @@ class SearchChats {
     this.state.status = "";
     this.draw();
     try {
-      this.sessions = await listSessions();
-      this.state.filters = filtersFor(this.sessions);
-      this.previewKey = "";
-      this.recompute(true);
-      this.scheduleSearch();
+      // Cloud sessions arrive over the network, so local chats show first.
+      const cloud = listDevinCloudSessions();
+      this.show(await listSessions());
+      this.show([...this.sessions, ...await cloud]);
       void this.updateIndex();
     } catch (error) { this.state.status = `Scan failed: ${String(error)}`; }
     finally { this.state.loading = false; this.draw(); }
+  }
+
+  private show(sessions: SessionSummary[]) {
+    this.sessions = sessions;
+    this.state.filters = filtersFor(sessions);
+    this.previewKey = "";
+    this.recompute(true);
+    this.scheduleSearch();
+    this.draw();
   }
 
   /** Keeps an existing transcript index current. The first full upload is left to --index. */
@@ -374,7 +389,7 @@ async function main() {
   const options = optionsFor(argv);
   if (options.index) {
     if (requestContext() === null) throw new Error("set TURBOPUFFER_API_KEY to index transcripts");
-    const sessions = await listSessions();
+    const sessions = await allSessions();
     const pending = (await staleSessions(sessions)).length;
     console.error(`Indexing ${pending} new or changed chats into ${namespaceName()}…`);
     const tty = process.stderr.isTTY;
@@ -393,7 +408,7 @@ async function main() {
     return;
   }
   if (options.list) {
-    const sessions = await listSessions();
+    const sessions = await allSessions();
     let hits: SearchHit[] = [];
     if (options.query.trim() && !options.local) {
       try { hits = await searchSessions(options.query, sessions, 100, AbortSignal.timeout(8000)); }

@@ -6,7 +6,7 @@
 import { extractClaudeMessageText } from "./claude-sessions.js";
 import { extractCodexContentText } from "./codex-sessions.js";
 import { readCursorMessages } from "./cursor-sessions.js";
-import { readDevinMessages } from "./devin-sessions.js";
+import { readDevinCloudMessages, readDevinMessages } from "./devin-sessions.js";
 import {
   asArray,
   asRecord,
@@ -50,6 +50,8 @@ export async function extractTranscript(
     await buildCodexItems(readLines(session.filePath), builder);
   } else if (session.agent === "cursor") {
     addMessages(readCursorMessages(session.filePath), builder);
+  } else if (session.agent === "devin-cloud") {
+    addMessages(await readDevinCloudMessages(session.filePath), builder);
   } else {
     addMessages(readDevinMessages(session.filePath, session.id), builder);
   }

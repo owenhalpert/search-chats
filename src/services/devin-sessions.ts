@@ -7,9 +7,11 @@
  *  - `message_nodes`: chat messages as JSON; compaction and forks copy earlier
  *    messages under new node ids but keep their `message_id`. User messages that
  *    Devin injected lack `metadata.is_user_input`.
+ *
+ * Cloud sessions live only in Devin's API, which accepts the CLI's own login.
  */
 
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -23,6 +25,86 @@ export const DEVIN_DB = path.join(
     path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "devin", "cli"),
   "sessions.db",
 );
+const DEVIN_CREDENTIALS = path.join(path.dirname(path.dirname(DEVIN_DB)), "credentials.toml");
+const CLOUD_ORIGINS: Record<string, string> = { slack: "Slack", webapp: "Web", desktop: "Desktop", cli: "CLI", api: "API" };
+
+type DevinApi = (route: string) => Promise<Record<string, unknown>>;
+
+async function devinApi(): Promise<DevinApi | null> {
+  const toml = await readFile(DEVIN_CREDENTIALS, "utf8").catch(() => "");
+  const field = (name: string) => new RegExp(`^${name}\\s*=\\s*"([^"]*)"`, "m").exec(toml)?.[1];
+  const token = field("windsurf_api_key");
+  if (!token) return null;
+  const base = field("devin_api_url") || "https://api.devin.ai";
+  return async route => {
+    const response = await fetch(`${base}/v3/${route}`, {
+      headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`Devin API returned ${response.status}`);
+    return asRecord(await response.json()) ?? {};
+  };
+}
+
+/** Follows Devin's cursor pagination for a list route. */
+async function allPages(api: DevinApi, route: string): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let after = "";
+  for (;;) {
+    const page = await api(`${route}${route.includes("?") ? "&" : "?"}first=200${after && `&after=${encodeURIComponent(after)}`}`);
+    items.push(...(asArray(page.items) ?? []).map(asRecord).filter(item => item !== null));
+    after = asString(page.end_cursor) ?? "";
+    if (page.has_next_page !== true || !after) return items;
+  }
+}
+
+/** The signed-in user's cloud sessions; empty when not signed in or offline. */
+export async function listDevinCloudSessions(): Promise<SessionSummary[]> {
+  try {
+    const api = await devinApi();
+    if (api === null) return [];
+    const self = await api("self");
+    const org = asString(self.devin_sessions_org_id) ?? asString(self.org_id);
+    const user = asString(self.user_id);
+    if (!org || !user) return [];
+    const route = `organizations/${org}/sessions`;
+    return (await allPages(api, `${route}?user_ids=${encodeURIComponent(user)}`)).flatMap((item): SessionSummary[] => {
+      const id = asString(item.session_id);
+      if (!id) return [];
+      const origin = CLOUD_ORIGINS[asString(item.origin) ?? ""] ?? "Cloud";
+      const seconds = (value: unknown) => new Date((typeof value === "number" ? value : 0) * 1000).toISOString();
+      return [{
+        id,
+        agent: "devin-cloud",
+        title: toTitle(asString(item.title) || "Untitled Devin session"),
+        preview: "",
+        cwd: os.homedir(),
+        projectName: origin,
+        gitBranch: null,
+        origin,
+        cliVersion: null,
+        startedAt: seconds(item.created_at),
+        updatedAt: seconds(item.updated_at),
+        // Not a file: the API route the transcript is read from.
+        filePath: `${route}/${id}`,
+        sizeBytes: 0,
+        archived: item.is_archived === true,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function readDevinCloudMessages(route: string): Promise<ChatMessage[]> {
+  const api = await devinApi();
+  if (api === null) throw new Error("sign in with devin auth login to read cloud sessions");
+  return (await allPages(api, `${route}/messages`)).map(item => ({
+    role: item.source === "user" ? "user" : "assistant",
+    text: asString(item.message) ?? "",
+    tools: [],
+    timestamp: typeof item.created_at === "number" ? new Date(item.created_at * 1000).toISOString() : null,
+  }));
+}
 
 interface SessionRow {
   id: string;

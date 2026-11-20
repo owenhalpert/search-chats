@@ -1,7 +1,7 @@
 {
   "name": "search-chats",
-  "version": "0.1.1",
-  "description": "Search and resume Claude Code, Codex, Cursor, and Devin chats from your terminal",
+  "version": "0.1.2",
+  "description": "Search and resume Claude Code, Codex, Cursor, and Devin (local and cloud) chats from your terminal",
   "license": "MIT",
   "repository": {
     "type": "git",

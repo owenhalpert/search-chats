@@ -8,7 +8,7 @@ search-chats retry backoff   # start with a query
 search-chats --agent devin   # one agent only
 ```
 
-Works with Codex, Claude Code, Cursor CLI, and Devin CLI. Enter resumes the chat in its original project folder.
+Works with Codex, Claude Code, Cursor CLI, and Devin, including Devin cloud sessions when you are signed in with `devin auth login`. Enter resumes the chat in its original project folder.
 
 ## Install
 

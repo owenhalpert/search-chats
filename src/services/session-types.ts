@@ -1,4 +1,4 @@
-export const AGENT_KINDS = ["codex", "claude-code", "cursor", "devin"] as const;
+export const AGENT_KINDS = ["codex", "claude-code", "cursor", "devin", "devin-cloud"] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
 export function isAgentKind(value: unknown): value is AgentKind {

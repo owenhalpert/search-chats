@@ -97,3 +97,44 @@ test("each install gets its own namespace, created once and reused", async () =>
   assert.equal(readFileSync(join(root, "config", "search-chats", "namespace"), "utf8").trim(), name);
   assert.equal(namespaceName(), name);
 });
+
+test("devin cloud sessions use the CLI login, follow pages, and resume in cloud mode", async () => {
+  await writeFile(join(root, "credentials.toml"), 'windsurf_api_key = "devin-session-token$abc"\ndevin_api_url = "https://devin.test"\n');
+  const requests: string[] = [];
+  const pages: Record<string, unknown> = {
+    "self": { user_id: "user-1", devin_sessions_org_id: "org-1" },
+    "organizations/org-1/sessions?user_ids=user-1&first=200": {
+      items: [{ session_id: "aa11", title: "Explain WAL replay", origin: "slack", created_at: 1790000000, updated_at: 1790000900 }],
+      has_next_page: true, end_cursor: "next",
+    },
+    "organizations/org-1/sessions?user_ids=user-1&first=200&after=next": {
+      items: [{ session_id: "bb22", title: null, origin: "webapp", created_at: 1, updated_at: 2, is_archived: true }], has_next_page: false,
+    },
+    "organizations/org-1/sessions/aa11/messages?first=200": {
+      items: [{ source: "user", message: "why does WAL replay stall?", created_at: 1790000000 }, { source: "devin", message: "The fetch is serial.", created_at: 1790000060 }],
+    },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer devin-session-token$abc");
+    const route = String(url).replace("https://devin.test/v3/", "");
+    requests.push(route);
+    return route in pages ? Response.json(pages[route]) : new Response("", { status: 404 });
+  }) as typeof fetch;
+  try {
+    const { listDevinCloudSessions } = await import("../src/services/devin-sessions");
+    const { readTranscript, resumeSpec } = await load();
+    const sessions = await listDevinCloudSessions();
+    assert.deepEqual(sessions.map(s => [s.id, s.title, s.projectName, s.archived]),
+      [["aa11", "Explain WAL replay", "Slack", false], ["bb22", "Untitled Devin session", "Web", true]]);
+    assert.equal(sessions[0].updatedAt, new Date(1790000900 * 1000).toISOString());
+    const transcript = await readTranscript(sessions[0]);
+    assert.deepEqual(transcript.items.map(i => i.kind === "message" ? `${i.role}: ${i.text}` : i.kind),
+      ["user: why does WAL replay stall?", "assistant: The fetch is serial."]);
+    assert.deepEqual(resumeSpec(sessions[0]).args, ["--cloud", "--resume", "devin-aa11"]);
+    globalThis.fetch = (async () => new Response("", { status: 401 })) as typeof fetch;
+    assert.deepEqual(await listDevinCloudSessions(), []);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -84,7 +84,7 @@ interface IndexState {
   sessions: Record<string, IndexedSession>;
 }
 
-const AGENT_CODES: Record<AgentKind, string> = { "claude-code": "cc", codex: "cx", cursor: "cu", devin: "dv" };
+const AGENT_CODES: Record<AgentKind, string> = { "claude-code": "cc", codex: "cx", cursor: "cu", devin: "dv", "devin-cloud": "dc" };
 
 function sessionKey(session: { agent: AgentKind; id: string }): string {
   return `${AGENT_CODES[session.agent]}:${session.id}`;
