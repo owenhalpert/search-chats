@@ -18,6 +18,8 @@ Requires Node.js 22.13 or newer.
 npm install -g search-chats
 ```
 
+Claude Code deletes transcripts 30 days after their last use, and deleted chats can't be searched. To keep them, add `"cleanupPeriodDays": 3650` to `~/.claude/settings.json`.
+
 ## Transcript search
 
 By default, search covers chat titles, prompts, projects, and branches. To also search inside transcripts, by keyword and by meaning, index them into [turbopuffer](https://turbopuffer.com):
