@@ -24,7 +24,10 @@ const AGENT_LIST = "all, codex, claude, cursor, devin, or devin-cloud";
 
 async function allSessions(): Promise<SessionSummary[]> {
   const cloud = listDevinCloudSessions();
-  return [...await listSessions(), ...await cloud];
+  const local = await listSessions();
+  const { sessions, warning } = await cloud;
+  if (warning) console.error(warning);
+  return [...local, ...sessions];
 }
 
 const HELP = `search-chats: search and resume your coding agent chats
@@ -167,7 +170,9 @@ class SearchChats {
       const cloud = listDevinCloudSessions();
       const local = await listSessions();
       this.show([...local, ...await cachedDevinCloudSessions()]);
-      this.show([...local, ...await cloud]);
+      const { sessions, warning } = await cloud;
+      this.show([...local, ...sessions]);
+      if (warning) this.state.status = warning;
       void this.updateIndex();
     } catch (error) { this.state.status = `Scan failed: ${String(error)}`; }
     finally { this.state.loading = false; this.draw(); }

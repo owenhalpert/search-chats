@@ -129,9 +129,11 @@ test("devin cloud sessions use the CLI login, follow pages, and resume in cloud 
     return route in pages ? Response.json(pages[route]) : new Response("", { status: 404 });
   }) as typeof fetch;
   try {
-    const { cachedDevinCloudSessions, listDevinCloudSessions } = await import("../src/services/devin-sessions");
+    const { cachedDevinCloudSessions, listDevinCloudSessions, DEVIN_LOGIN_REJECTED } = await import("../src/services/devin-sessions");
     const { readTranscript, resumeSpec } = await load();
-    const sessions = await listDevinCloudSessions();
+    const listed = await listDevinCloudSessions();
+    assert.equal(listed.warning, undefined);
+    const sessions = listed.sessions;
     assert.deepEqual(sessions.map(s => [s.id, s.title, s.projectName, s.archived]),
       [["aa11", "Explain WAL replay", "Slack", false], ["bb22", "Untitled Devin session", "Web", true]]);
     assert.equal(sessions[0].updatedAt, new Date(1790000900 * 1000).toISOString());
@@ -139,9 +141,11 @@ test("devin cloud sessions use the CLI login, follow pages, and resume in cloud 
     assert.deepEqual(transcript.items.map(i => i.kind === "message" ? `${i.role}: ${i.text}` : i.kind),
       ["user: why does WAL replay stall? cc @Bo\n\n> replay p99 is 40s", "assistant: The fetch is serial.", "user: Bo: can we parallelize it?", "user: see #infra, where Cy: it spins"]);
     assert.deepEqual(resumeSpec(sessions[0]).args, ["--cloud", "--resume", "devin-aa11"]);
-    // Offline or signed out of the API: the last fetched list stays visible.
-    globalThis.fetch = (async () => new Response("", { status: 401 })) as typeof fetch;
-    assert.deepEqual(await listDevinCloudSessions(), sessions);
+    // A rejected login warns; being offline does not. Both keep the last list visible.
+    globalThis.fetch = (async () => new Response("", { status: 403 })) as typeof fetch;
+    assert.deepEqual(await listDevinCloudSessions(), { sessions, warning: DEVIN_LOGIN_REJECTED });
+    globalThis.fetch = (async () => { throw new TypeError("fetch failed"); }) as typeof fetch;
+    assert.deepEqual(await listDevinCloudSessions(), { sessions });
     assert.deepEqual(await cachedDevinCloudSessions(), sessions);
   } finally {
     globalThis.fetch = realFetch;

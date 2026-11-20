@@ -41,10 +41,16 @@ async function devinApi(): Promise<DevinApi | null> {
     const response = await fetch(`${base}/v3/${route}`, {
       headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Devin API returned ${response.status}`);
+    if (!response.ok) throw new DevinApiError(response.status);
     return asRecord(await response.json()) ?? {};
   };
 }
+
+class DevinApiError extends Error {
+  constructor(readonly status: number) { super(`Devin API returned ${status}`); }
+}
+
+export const DEVIN_LOGIN_REJECTED = "Devin rejected your login: run devin auth login. Showing saved cloud sessions.";
 
 /** Follows Devin's cursor pagination for a list route. */
 async function allPages(api: DevinApi, route: string): Promise<Record<string, unknown>[]> {
@@ -63,15 +69,18 @@ export async function cachedDevinCloudSessions(): Promise<SessionSummary[]> {
   try { return JSON.parse(await readFile(CLOUD_CACHE, "utf8")) as SessionSummary[]; } catch { return []; }
 }
 
-/** The signed-in user's cloud sessions; the cached list when the API is unreachable. */
-export async function listDevinCloudSessions(): Promise<SessionSummary[]> {
+/**
+ * The signed-in user's cloud sessions, or the cached list when the API fails.
+ * The warning is set only when Devin rejects a saved login, not when offline.
+ */
+export async function listDevinCloudSessions(): Promise<{ sessions: SessionSummary[]; warning?: string }> {
   const api = await devinApi();
-  if (api === null) return [];
+  if (api === null) return { sessions: [] };
   try {
     const self = await api("self");
     const org = asString(self.devin_sessions_org_id) ?? asString(self.org_id);
     const user = asString(self.user_id);
-    if (!org || !user) return [];
+    if (!org || !user) return { sessions: [] };
     const route = `organizations/${org}/sessions`;
     const sessions = (await allPages(api, `${route}?user_ids=${encodeURIComponent(user)}`)).flatMap((item): SessionSummary[] => {
       const id = asString(item.session_id);
@@ -98,9 +107,11 @@ export async function listDevinCloudSessions(): Promise<SessionSummary[]> {
     });
     await mkdir(cacheDirectory, { recursive: true });
     await writeFile(CLOUD_CACHE, JSON.stringify(sessions));
-    return sessions;
-  } catch {
-    return cachedDevinCloudSessions();
+    return { sessions };
+  } catch (error) {
+    const sessions = await cachedDevinCloudSessions();
+    const rejected = error instanceof DevinApiError && (error.status === 401 || error.status === 403);
+    return rejected ? { sessions, warning: DEVIN_LOGIN_REJECTED } : { sessions };
   }
 }
 
