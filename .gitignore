@@ -1,0 +1,5 @@
+node_modules/
+bin/
+*.log
+# Retrieval eval built from private chats; never publish.
+eval/

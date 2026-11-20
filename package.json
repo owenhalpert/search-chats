@@ -1,0 +1,42 @@
+{
+  "name": "search-chats",
+  "version": "0.1.1",
+  "description": "Search and resume Claude Code, Codex, Cursor, and Devin chats from your terminal",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/owenhalpert/search-chats.git"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "devin",
+    "cli",
+    "search",
+    "turbopuffer"
+  ],
+  "bin": {
+    "search-chats": "bin/search-chats.js"
+  },
+  "files": [
+    "bin/search-chats.js"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node bin/search-chats.js",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:terminal": "npm run build && python3 tests/pty-smoke.py",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.3",
+    "esbuild": "0.27.7",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}
