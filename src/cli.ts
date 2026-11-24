@@ -417,7 +417,14 @@ async function main() {
     const sessions = await allSessions();
     let hits: SearchHit[] = [];
     if (options.query.trim() && !options.local) {
-      try { hits = await searchSessions(options.query, sessions, 100, AbortSignal.timeout(8000)); }
+      try {
+        // The same keyword and semantic passes the picker merges.
+        const signal = AbortSignal.timeout(8000);
+        const [semantic, keyword] = await Promise.all([
+          searchSessions(options.query, sessions, 100, signal), searchSessionsInstant(options.query, signal),
+        ]);
+        hits = [...semantic, ...keyword];
+      }
       catch (error) { console.error(`Transcript search unavailable; local matches shown. ${String(error)}`); }
     }
     const results = resultsFor(sessions, options.query, options.agent, hits);

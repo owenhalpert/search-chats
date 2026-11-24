@@ -22,7 +22,7 @@ Claude Code deletes transcripts 30 days after their last use, and deleted chats 
 
 ## Transcript search
 
-By default, search covers chat titles, prompts, projects, and branches. To also search inside transcripts, by keyword and by meaning, index them into [turbopuffer](https://turbopuffer.com):
+By default, search covers chat titles, opening prompts, and project names. To also search inside transcripts, by keyword and by meaning, index them into [turbopuffer](https://turbopuffer.com):
 
 ```sh
 export TURBOPUFFER_API_KEY=...

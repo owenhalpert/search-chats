@@ -43,9 +43,8 @@ export function filterSessions(
 ): SessionSummary[] {
   return sessions.filter((session) => {
     if (agent !== "all" && session.agent !== agent) return false;
-    const haystack =
-      `${session.title} ${session.preview} ${session.projectName} ${session.cwd} ${session.gitBranch ?? ""} ${session.id}`;
-    return matchesQuery(haystack, query);
+    // Branch, path, and id are shared by many chats, so matching them swamps results.
+    return matchesQuery(`${session.title} ${session.preview} ${session.projectName}`, query);
   });
 }
 

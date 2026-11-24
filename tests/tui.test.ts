@@ -14,16 +14,16 @@ const session = (id: string, updatedAt: string, extra: Partial<SessionSummary> =
 });
 const hit = (s: SessionSummary, snippet = "indexing a match"): SearchHit => ({ sessionId: s.id, agent: s.agent, snippet, matches: [], score: 1 });
 
-test("local and transcript matches are merged by recency, regardless of relevance or provider", () => {
+test("title matches come before transcript-only mentions, each newest first, regardless of provider", () => {
   const old = session("old", "2026-01-01", { agent: "claude-code" });
   const recent = session("recent", "2026-10-15", { title: "Unrelated title", preview: "" });
   const middle = session("middle", "2026-08-01");
   const sessions = [old, recent, middle];
   const results = resultsFor(sessions, "indexing", "all", [hit(old), hit(recent), hit(middle), hit(old)]);
-  assert.deepEqual(results.map(r => r.session.id), ["recent", "middle", "old"]);
-  assert.equal(results[0].local, false);
-  assert.equal(results[2].local, true);
-  assert.equal(results[2].hit?.snippet, "indexing a match");
+  assert.deepEqual(results.map(r => r.session.id), ["middle", "old", "recent"]);
+  assert.equal(results[1].local, true);
+  assert.equal(results[2].local, false);
+  assert.equal(results[1].hit?.snippet, "indexing a match");
   assert.deepEqual(resultsFor(sessions, "indexing", "claude-code", [hit(recent)]).map(r => r.session.id), ["old"]);
   assert.deepEqual(resultsFor(sessions, "", "all", []).map(r => r.session.id), ["recent", "middle", "old"]);
 });

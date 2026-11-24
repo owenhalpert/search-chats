@@ -27,7 +27,10 @@ export function sessionKey(session: Pick<SessionSummary, "agent" | "id">): strin
   return `${session.agent}:${session.id}`;
 }
 
-/** Search relevance determines membership; last activity always determines order. */
+/**
+ * Search relevance determines membership. Chats whose title, opening prompt, or project
+ * matches come before chats that only mention the query, each newest first.
+ */
 export function resultsFor(
   sessions: SessionSummary[], query: string, filter: AgentFilter, hits: SearchHit[],
 ): ChatResult[] {
@@ -50,6 +53,7 @@ export function resultsFor(
   }
   const time = (value: string) => Date.parse(value) || 0;
   return [...results.values()].sort((a, b) =>
+    Number(b.local) - Number(a.local) ||
     time(b.session.updatedAt) - time(a.session.updatedAt) ||
     sessionKey(a.session).localeCompare(sessionKey(b.session)),
   );
